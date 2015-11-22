@@ -8,14 +8,14 @@ import(
 	"net/http"
 	"models"
 	"encoding/binary"
-    "bytes"
+	"bytes"
 )
 
 type (
 
 	UberController struct	{
 
-			session *mgo.Session
+		session *mgo.Session // MongoDB session Replication, no new connection is established
 	}
 
 )
@@ -24,17 +24,7 @@ func NewUberController(s *mgo.Session) *UberController {
 	return &UberController{s}
 }
 
-func (uc UberController) GetEstimates(locationid string) {
-	oid := bson.ObjectIdHex(locationid)
-	loc := models.Location{}
-    err := uc.session.DB("test_mongo_db").C("test").FindId(oid).One(&loc)
-  	if err != nil {
-    	fmt.Printf("got an error finding a doc %v\n")
-    
-  	}
-  	fmt.Print(loc)
-}
-
+// Create a Trip
 func (uc UberController) AddTrip(w http.ResponseWriter, r *http.Request) {
 
 	trip := models.Trip{}
@@ -60,7 +50,7 @@ func (uc UberController) AddTrip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	loc[trip.StartingFromLocationID] = location
-	//fmt.Print(json.NewEncoder(w).Encode(loc[trip.StartingFromLocationID]))
+	
 
 	for _, each := range trip.LocationIds {
 		
@@ -88,6 +78,7 @@ func (uc UberController) AddTrip(w http.ResponseWriter, r *http.Request) {
 	originLat := loc[startId].Coordinate.Lat
 	originLng := loc[startId].Coordinate.Lng
 
+	// Min values per source - destination edge
 	minPrice := 99999
 	minDuration := 0
 	minDistance := 0.0
@@ -126,7 +117,7 @@ func (uc UberController) AddTrip(w http.ResponseWriter, r *http.Request) {
 		pos++
 	}
 
-   	price,duration,distance = GetEstimates(startLat,startLng,originLat,originLng)
+   	price,duration,distance = GetEstimates(startLat,startLng,originLat,originLng) // Gets the cost, duration and distance
    	totalCost+=price
 	totalDuration+=duration
 	totalDistance+=distance
@@ -153,6 +144,7 @@ func (uc UberController) AddTrip(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Gets the cost, duration and distance from Uber Sandbox
 func GetEstimates(startLat float64, startLng float64, endLat float64, endLng float64)	(int,int,float64)	{
 
 	estimate := models.Estimate{}
@@ -170,11 +162,12 @@ func GetEstimates(startLat float64, startLng float64, endLat float64, endLng flo
     return estimate.Prices[0].HighEstimate, estimate.Prices[0].Duration, estimate.Prices[0].Distance
 }
 
+// Gets the newly added Trip
 func (uc UberController) GetTrip(w http.ResponseWriter, r *http.Request) {
 
 	params := r.URL.Query()
-    uid := params.Get(":trip_id")
-    oid := bson.ObjectIdHex(uid)
+    	uid := params.Get(":trip_id")
+    	oid := bson.ObjectIdHex(uid)
 	tripResp := models.TripResponse{}
 	err := uc.session.DB("test_mongo_db").C("trip_details").FindId(oid).One(&tripResp)
 	if err != nil {
@@ -187,11 +180,12 @@ func (uc UberController) GetTrip(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Get the trip on !
 func (uc UberController) RequestTrip(w http.ResponseWriter, r *http.Request)	{
 
 	params := r.URL.Query()
-    uid := params.Get(":trip_id")
-    oid := bson.ObjectIdHex(uid)
+    	uid := params.Get(":trip_id")
+    	oid := bson.ObjectIdHex(uid)
 	tripResp := models.TripResponse{}
 	err := uc.session.DB("test_mongo_db").C("trip_details").FindId(oid).One(&tripResp)
 	if err != nil {
@@ -272,6 +266,7 @@ func (uc UberController) RequestTrip(w http.ResponseWriter, r *http.Request)	{
 		json.NewEncoder(w).Encode(tripReq)
 }
 
+// Gives  the estimated time after which the uber is expected
 func GetEstimatedTime(startLat float64, startLng float64,nextLat float64,nextLng float64) (int)	{
 
 	UBER_ACCESS_TOKEN := "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzY29wZXMiOlsicHJvZmlsZSIsImhpc3RvcnkiXSwic3ViIjoiOWRlMWU4MTktNjBkMi00MmNjLTlkYTAtNjFkZDNjODkwYjE3IiwiaXNzIjoidWJlci11czEiLCJqdGkiOiJlMzJmZDY3ZC0yNTIwLTQ0ZTMtYWViYy1kNjZlNzM4MjhjZGEiLCJleHAiOjE0NTA3MzU3MDYsImlhdCI6MTQ0ODE0MzcwNSwidWFjdCI6InpXWjFRNlBxbmdYQW5ZYjdDcXNYZExsZHZyenMwZiIsIm5iZiI6MTQ0ODE0MzYxNSwiYXVkIjoibElGN2lUUXJqUFUxdmEteGZCREx5RU4zQlhnR3V4Rk8ifQ.TJcZb3tExZMhcV6xGoiiXJVamQtzOSrDAabNp8ET11mfGCAHVASUIweSqIfVFRw2HtOJz9m2rgM_5JKue1quE8xA_IPN3zBOj3g4cDdiz7AxdV2G-pcb_C2I4tUTk_LdabkeKOEyYxrwQyMrMT5otdCGfRRpwuxqugWI6CUzQdYH6edlZ-OzDvbgRgC9EqcXPo-ATImUggTAllyHrByxgS8bFxN4j3yundXhfce2BhhaErAsdGlAFRkhoc16SaH9XOWmoLpwdUy9jF3lZhm31umYFSIXUhlWgNcqD5KtrGI1OybjB7GJX9gP69101fcuQ0aBqYBd4TVd9zji1n4jXw"
@@ -306,6 +301,7 @@ func GetEstimatedTime(startLat float64, startLng float64,nextLat float64,nextLng
     return rideResponse.Eta
 }
 
+// Product Id for the UberX.
 func GetUberProductID(latitude float64, longitude float64) string {
 
 	UBER_SERVER_TOKEN := "Token iD0QDvQe5pG6cMVb4Q23vwlPldl-CvtLkGbfFj65"
